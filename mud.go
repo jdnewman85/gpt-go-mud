@@ -15,12 +15,31 @@ const (
 	stateDead
 )
 
+// player represents a player in the MUD.
+type player struct {
+	health int
+	mana   int
+	x      int
+	y      int
+}
+
 // connection represents a connection to the MUD.
 type connection struct {
 	conn   net.Conn
 	name   string
 	state  int
 	output *bufio.Writer
+	player *player
+}
+
+// newConnection creates a new connection.
+func newConnection(conn net.Conn) *connection {
+	return &connection{
+		conn:   conn,
+		state:  stateLogin,
+		output: bufio.NewWriter(conn),
+		player: nil,
+	}
 }
 
 // mud represents the MUD server.
@@ -62,59 +81,47 @@ func (m *mud) acceptConnection() (*connection, error) {
 	return c, nil
 }
 
-// handleLogin handles the stateLogin state.
-func (m *mud) handleLogin(c *connection, args []string) {
-	if len(args) != 2 {
-		c.write("Invalid name.\nEnter your name: ")
-		return
-	}
-	name := args[1]
-	if len(name) < 3 {
-		c.write("Name must be at least 3 characters.\nEnter your name: ")
-		return
-	}
-	c.name = name
-	c.write("Enter your password: ")
-	c.state = statePassword
-}
-
-// handlePassword handles the statePassword state.
-func (m *mud) handlePassword(c *connection, args []string) {
-	if len(args) != 2 {
-		c.write("Invalid password.\nEnter your password: ")
-		return
-	}
-	password := args[1]
-	if len(password) <= 4 || !strings.ContainsAny(password, "0123456789") {
-		c.write("Password must be at least 4 characters and contain a number.\nEnter your password: ")
-		return
-	}
-	c.write("\nWelcome to the game, " + c.name + "!\n\n")
-	c.state = statePlaying
-}
-
-// handlePlaying handles the statePlaying state.
-func (m *mud) handlePlaying(c *connection, args []string) {
-	switch cmd := args[0]; cmd {
+// handlePlaying processes commands from the connection in the playing state.
+func (m *mud) handlePlaying(c *connection, cmd string, args []string) {
+	switch cmd {
 	case "who":
-		c.write("Connections:\n")
-		for _, conn := range m.conns {
-			if conn.state == statePlaying {
-				c.write("- " + conn.name + "\n")
-			}
-		}
+		m.who(c)
 	case "say":
-		if len(args) < 2 {
-			c.write("Usage: say <message>\n")
-			return
-		}
-		message := strings.Join(args[1:], " ")
-		for _, conn := range m.conns {
-			if conn.state == statePlaying {
-				conn.write(c.name + " says: " + message + "\n")
-			}
-		}
+		m.say(c, args)
+	case "quit":
+		m.quit(c)
+	default:
+		c.write("Unknown command: " + cmd + "\n")
 	}
+}
+
+// handleLogin processes commands from the connection in the login state.
+func (m *mud) handleLogin(c *connection, cmd string) {
+	if len(cmd) < 3 {
+		c.write("Name must be at least 3 characters long.\n")
+		c.write("Enter your name: ")
+		return
+	}
+	c.name = cmd
+	c.state = statePassword
+	c.write("Enter your password: ")
+}
+
+// handlePassword processes commands from the connection in the password state.
+func (m *mud) handlePassword(c *connection, cmd string) {
+	if len(cmd) <= 4 || !strings.ContainsAny(cmd, "0123456789") {
+		c.write("Password must be at least 5 characters long and contain a number.\n")
+		c.write("Enter your password: ")
+		return
+	}
+	c.state = statePlaying
+	c.player = &player{
+		health: 100,
+		mana:   100,
+		x:      0,
+		y:      0,
+	}
+	c.write("Welcome to the MUD, " + c.name + "!\n")
 }
 
 // handleConnection processes commands from the given connection.

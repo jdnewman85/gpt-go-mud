@@ -23,16 +23,6 @@ type connection struct {
 	output *bufio.Writer
 }
 
-// write writes the given string to the connection's output buffer.
-func (c *connection) write(s string) {
-	if _, err := fmt.Fprintf(c.output, s); err != nil {
-		fmt.Println(err)
-	}
-	if err := c.output.Flush(); err != nil {
-		fmt.Println(err)
-	}
-}
-
 // mud represents the MUD server.
 type mud struct {
 	listener net.Listener
@@ -127,7 +117,6 @@ func (m *mud) handlePlaying(c *connection, args []string) {
 	}
 }
 
-
 // handleConnection processes commands from the given connection.
 func (m *mud) handleConnection(c *connection) {
 	input := bufio.NewScanner(c.conn)
@@ -137,20 +126,43 @@ func (m *mud) handleConnection(c *connection) {
 		if len(args) == 0 {
 			continue
 		}
-		cmd := args[0]
+		command, args := args[0], args[1:]
 		switch c.state {
 		case stateLogin:
-			m.handleLogin(c, args)
-		case statePassword:
-			m.handlePassword(c, args)
-		case statePlaying:
-			m.handlePlaying(c, args)
-			if cmd == "quit" {
-				c.write("Bye!\n")
-				c.conn.Close()
-				c.state = stateDead
+			if len(command) < 3 {
+				c.write("Name must be at least 3 characters.\n\nEnter your name: ")
+				break
 			}
+			c.name = command
+			c.state = statePassword
+			c.write("Enter your password: ")
+		case statePassword:
+			if len(command) < 5 || !strings.ContainsAny(command, "0123456789") {
+				c.write("Password must be at least 5 characters and contain a number.\n\nEnter your password: ")
+				break
+			}
+			c.state = statePlaying
+			c.write("Welcome, " + c.name + "!\n")
+			m.broadcast(c.name + " has entered the game.\n")
+		case statePlaying:
+			switch command {
+			case "who":
+				m.who(c)
+			case "say":
+				m.say(c, args)
+			case "quit":
+				m.quit(c)
+			default:
+				c.write("Unknown command.\n")
+			}
+		case stateDead:
+			break
 		}
+	}
+	c.conn.Close()
+	delete(m.conns, c.conn.RemoteAddr().String())
+	if c.state == statePlaying {
+		m.broadcast(c.name + " has left the game.\n")
 	}
 }
 
@@ -169,4 +181,55 @@ func main() {
 		}
 		go m.handleConnection(c)
 	}
+}
+
+// write writes the given string to the connection's output buffer.
+func (c *connection) write(s string) {
+	if _, err := fmt.Fprintf(c.output, s); err != nil {
+		fmt.Println(err)
+	}
+	if err := c.output.Flush(); err != nil {
+		fmt.Println(err)
+	}
+}
+
+// flush flushes the connection's output buffer to the connection.
+func (c *connection) flush() {
+	if err := c.output.Flush(); err != nil {
+		fmt.Println(err)
+	}
+}
+
+// broadcast sends the given string to all connections in the playing state.
+func (m *mud) broadcast(s string) {
+	for _, c := range m.conns {
+		if c.state == statePlaying {
+			c.write(s)
+		}
+	}
+}
+
+// who displays the list of connections in the playing state to the given connection.
+func (m *mud) who(c *connection) {
+	c.write("Players:\n")
+	for _, c := range m.conns {
+		if c.state == statePlaying {
+			c.write("  " + c.name + "\n")
+		}
+	}
+}
+
+// say broadcasts the given message to all connections in the playing state.
+func (m *mud) say(c *connection, args []string) {
+	if len(args) == 0 {
+		c.write("Say what?\n")
+		return
+	}
+	m.broadcast(c.name + " says: " + strings.Join(args, " ") + "\n")
+}
+
+// quit disconnects the given connection with a bye message.
+func (m *mud) quit(c *connection) {
+	c.write("Bye!\n")
+	c.state = stateDead
 }

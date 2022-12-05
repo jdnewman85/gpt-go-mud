@@ -212,9 +212,9 @@ func (m *mud) broadcast(s string) {
 // who displays the list of connections in the playing state to the given connection.
 func (m *mud) who(c *connection) {
 	c.write("Players:\n")
-	for _, c := range m.conns {
-		if c.state == statePlaying {
-			c.write("  " + c.name + "\n")
+	for _, conn := range m.conns {
+		if conn.state == statePlaying {
+			c.write("  " + conn.name + "\n")
 		}
 	}
 }

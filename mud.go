@@ -174,14 +174,10 @@ func main() {
 	}
 }
 
-// write writes the given string to the connection's output buffer.
+// write writes the given string to the connection.
 func (c *connection) write(s string) {
-	if _, err := fmt.Fprintf(c.output, s); err != nil {
-		fmt.Println(err)
-	}
-	if err := c.output.Flush(); err != nil {
-		fmt.Println(err)
-	}
+	c.output.WriteString("\n" + s)
+	c.output.Flush()
 }
 
 // flush flushes the connection's output buffer to the connection.
@@ -212,11 +208,15 @@ func (m *mud) who(c *connection) {
 
 // say broadcasts the given message to all connections in the playing state.
 func (m *mud) say(c *connection, args []string) {
-	if len(args) == 0 {
-		c.write("Say what?\n")
-		return
+	for _, conn := range m.conns {
+		if conn.state == statePlaying {
+			if conn == c {
+				conn.write(fmt.Sprintf("You say: %s\n", strings.Join(args, " ")))
+			} else {
+				conn.write(fmt.Sprintf("%s says: %s\n", c.name, strings.Join(args, " ")))
+			}
+		}
 	}
-	m.broadcast(c.name + " says: " + strings.Join(args, " ") + "\n")
 }
 
 // quit disconnects the given connection with a bye message.

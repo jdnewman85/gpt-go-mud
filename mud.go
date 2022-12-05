@@ -93,6 +93,7 @@ func (m *mud) handlePlaying(c *connection, cmd string, args []string) {
 	default:
 		c.write("Unknown command: " + cmd + "\n")
 	}
+	c.write(fmt.Sprintf("\n%s - Health: %d Mana: %d > ", c.name, c.player.health, c.player.mana))
 }
 
 // handleLogin processes commands from the connection in the login state.
@@ -126,50 +127,28 @@ func (m *mud) handlePassword(c *connection, cmd string) {
 
 // handleConnection processes commands from the given connection.
 func (m *mud) handleConnection(c *connection) {
-	input := bufio.NewScanner(c.conn)
-	for input.Scan() {
-		line := input.Text()
-		args := strings.Fields(line)
-		if len(args) == 0 {
+	scanner := bufio.NewScanner(c.conn)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
 			continue
 		}
-		command, args := args[0], args[1:]
+		parts := strings.SplitN(line, " ", 2)
+		cmd := parts[0]
+		var args []string
+		if len(parts) == 2 {
+			args = strings.Split(parts[1], " ")
+		}
 		switch c.state {
 		case stateLogin:
-			if len(command) < 3 {
-				c.write("Name must be at least 3 characters.\n\nEnter your name: ")
-				break
-			}
-			c.name = command
-			c.state = statePassword
-			c.write("Enter your password: ")
+			m.handleLogin(c, cmd)
 		case statePassword:
-			if len(command) < 5 || !strings.ContainsAny(command, "0123456789") {
-				c.write("Password must be at least 5 characters and contain a number.\n\nEnter your password: ")
-				break
-			}
-			c.state = statePlaying
-			c.write("Welcome, " + c.name + "!\n")
-			m.broadcast(c.name + " has entered the game.\n")
+			m.handlePassword(c, cmd)
 		case statePlaying:
-			switch command {
-			case "who":
-				m.who(c)
-			case "say":
-				m.say(c, args)
-			case "quit":
-				m.quit(c)
-			default:
-				c.write("Unknown command.\n")
-			}
+			m.handlePlaying(c, cmd, args)
 		case stateDead:
-			break
+			// do nothing
 		}
-	}
-	c.conn.Close()
-	delete(m.conns, c.conn.RemoteAddr().String())
-	if c.state == statePlaying {
-		m.broadcast(c.name + " has left the game.\n")
 	}
 }
 

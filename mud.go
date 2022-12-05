@@ -15,14 +15,6 @@ const (
 	stateDead
 )
 
-// player represents a player in the MUD.
-type player struct {
-	health int
-	mana   int
-	x      int
-	y      int
-}
-
 // connection represents a connection to the MUD.
 type connection struct {
 	conn   net.Conn
@@ -32,20 +24,18 @@ type connection struct {
 	player *player
 }
 
-// newConnection creates a new connection.
-func newConnection(conn net.Conn) *connection {
-	return &connection{
-		conn:   conn,
-		state:  stateLogin,
-		output: bufio.NewWriter(conn),
-		player: nil,
-	}
-}
-
 // mud represents the MUD server.
 type mud struct {
 	listener net.Listener
 	conns    map[string]*connection
+}
+
+// player represents a player in the MUD.
+type player struct {
+	health int
+	mana   int
+	x      int
+	y      int
 }
 
 // newMud creates a new MUD server.
@@ -71,63 +61,19 @@ func (m *mud) acceptConnection() (*connection, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &connection{
-		conn:   conn,
-		state:  stateLogin,
-		output: bufio.NewWriter(conn),
-	}
+	c := newConnection(conn)
 	m.conns[conn.RemoteAddr().String()] = c
 	c.write("Welcome to the MUD!\n\nEnter your name: ")
 	return c, nil
 }
 
-// handlePlaying processes commands from the connection in the playing state.
-func (m *mud) handlePlaying(c *connection, cmd string, args []string) {
-	switch cmd {
-	case "who":
-		m.who(c)
-	case "say":
-		m.say(c, args)
-	case "quit":
-		m.quit(c)
-	default:
-		c.write("Unknown command: " + cmd + "\n")
+// newConnection creates a new connection.
+func newConnection(conn net.Conn) *connection {
+	return &connection{
+		conn:   conn,
+		output: bufio.NewWriter(conn),
+		state:  stateLogin,
 	}
-	c.write(fmt.Sprintf("\n%s - Health: %d Mana: %d > ", c.name, c.player.health, c.player.mana))
-}
-
-// handleLogin processes the name entered by the connection.
-func (m *mud) handleLogin(c *connection, name string) {
-	if len(name) < 3 {
-		c.write("Name must be at least 3 characters long.\n\nEnter your name: ")
-		return
-	}
-	if _, ok := m.conns[name]; ok {
-		c.write("Name is already taken.\n\nEnter your name: ")
-		return
-	}
-	delete(m.conns, c.conn.RemoteAddr().String())
-	c.name = name
-	m.conns[name] = c
-	c.write("Enter your password: ")
-	c.state = statePassword
-}
-
-// handlePassword processes commands from the connection in the password state.
-func (m *mud) handlePassword(c *connection, cmd string) {
-	if len(cmd) <= 4 || !strings.ContainsAny(cmd, "0123456789") {
-		c.write("Password must be at least 5 characters long and contain a number.\n")
-		c.write("Enter your password: ")
-		return
-	}
-	c.state = statePlaying
-	c.player = &player{
-		health: 100,
-		mana:   100,
-		x:      0,
-		y:      0,
-	}
-	c.write("Welcome to the MUD, " + c.name + "!\n")
 }
 
 // handleConnection processes commands from the given connection.
@@ -157,70 +103,104 @@ func (m *mud) handleConnection(c *connection) {
 	}
 }
 
-func main() {
-	m := newMud()
-	if err := m.listen("localhost:8000"); err != nil {
-		fmt.Println(err)
+// handleLogin processes login commands from the given connection.
+func (m *mud) handleLogin(c *connection, cmd string) {
+	c.name = cmd
+	if len(c.name) < 3 {
+		c.write("Name must be at least 3 characters.\nEnter your name: ")
 		return
 	}
-	fmt.Println("Listening on localhost:8000")
-	for {
-		c, err := m.acceptConnection()
-		if err != nil {
-			fmt.Println(err)
-			break
-		}
-		go m.handleConnection(c)
+	if _, ok := m.conns[c.name]; ok {
+		c.write("Name is already in use.\nEnter your name: ")
+		return
+	}
+	m.conns[c.name] = c
+	delete(m.conns, c.conn.RemoteAddr().String())
+	c.write("Enter your password: ")
+	c.state = statePassword
+}
+
+// handlePassword processes password commands from the given connection.
+func (m *mud) handlePassword(c *connection, cmd string) {
+	if len(cmd) < 5 || !strings.ContainsAny(cmd, "0123456789") {
+		c.write("Password must be at least 5 characters and contain a number.\nEnter your password: ")
+		return
+	}
+	c.player = &player{}
+	c.write(fmt.Sprintf("Welcome, %s!\n\n", c.name))
+	c.state = statePlaying
+}
+
+// handlePlaying processes playing commands from the given connection.
+func (m *mud) handlePlaying(c *connection, cmd string, args []string) {
+	switch cmd {
+	case "who":
+		m.who(c)
+	case "say":
+		m.say(c, args)
+	case "quit":
+		m.quit(c)
+	default:
+		c.write("Unknown command.\n")
+	}
+	if c.state == statePlaying {
+		c.write(fmt.Sprintf("%s: %d/%d > ", c.name, c.player.health, c.player.mana))
 	}
 }
 
-// write writes the given string to the connection.
-func (c *connection) write(s string) {
-	c.output.WriteString("\n" + s)
-	c.output.Flush()
-}
-
-// flush flushes the connection's output buffer to the connection.
-func (c *connection) flush() {
-	if err := c.output.Flush(); err != nil {
-		fmt.Println(err)
-	}
-}
-
-// broadcast sends the given string to all connections in the playing state.
-func (m *mud) broadcast(s string) {
-	for _, c := range m.conns {
-		if c.state == statePlaying {
-			c.write(s)
-		}
-	}
-}
-
-// who displays the list of connections in the playing state to the given connection.
+// who displays the list of players in the playing state to the given connection.
 func (m *mud) who(c *connection) {
-	c.write("Players:\n")
+	c.write("Connected players:\n")
 	for _, conn := range m.conns {
 		if conn.state == statePlaying {
-			c.write("  " + conn.name + "\n")
+			c.write(fmt.Sprintf("- %s\n", conn.name))
 		}
 	}
 }
 
 // say broadcasts the given message to all connections in the playing state.
 func (m *mud) say(c *connection, args []string) {
+	if len(args) == 0 {
+		return
+	}
+	msg := strings.Join(args, " ")
 	for _, conn := range m.conns {
 		if conn.state == statePlaying {
-			if conn == c {
-				conn.write(fmt.Sprintf("You say: %s\n", strings.Join(args, " ")))
-			} else {
-				conn.write(fmt.Sprintf("%s says: %s\n", c.name, strings.Join(args, " ")))
-			}
+			conn.write(fmt.Sprintf("%s says: %s\n", c.name, msg))
 		}
 	}
 }
 
-// quit disconnects the given connection with a bye message.
+// quit disconnects the given connection.
 func (m *mud) quit(c *connection) {
 	c.write("Bye!\n")
+	delete(m.conns, c.name)
+	delete(m.conns, c.conn.RemoteAddr().String())
+	c.conn.Close()
 	c.state = stateDead
+	for _, conn := range m.conns {
+		if conn.state == statePlaying {
+			conn.write(fmt.Sprintf("%s has quit.\n", c.name))
+		}
+	}
+}
+
+// write sends the given message to the connection.
+func (c *connection) write(msg string) {
+	c.output.WriteString(msg)
+	c.output.Flush()
+}
+
+func main() {
+	m := newMud()
+	if err := m.listen("localhost:8080"); err != nil {
+		panic(err)
+	}
+	for {
+		c, err := m.acceptConnection()
+		if err != nil {
+			panic(err)
+		}
+		go m.handleConnection(c)
+	}
 }

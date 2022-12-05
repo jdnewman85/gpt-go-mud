@@ -96,16 +96,21 @@ func (m *mud) handlePlaying(c *connection, cmd string, args []string) {
 	c.write(fmt.Sprintf("\n%s - Health: %d Mana: %d > ", c.name, c.player.health, c.player.mana))
 }
 
-// handleLogin processes commands from the connection in the login state.
-func (m *mud) handleLogin(c *connection, cmd string) {
-	if len(cmd) < 3 {
-		c.write("Name must be at least 3 characters long.\n")
-		c.write("Enter your name: ")
+// handleLogin processes the name entered by the connection.
+func (m *mud) handleLogin(c *connection, name string) {
+	if len(name) < 3 {
+		c.write("Name must be at least 3 characters long.\n\nEnter your name: ")
 		return
 	}
-	c.name = cmd
-	c.state = statePassword
+	if _, ok := m.conns[name]; ok {
+		c.write("Name is already taken.\n\nEnter your name: ")
+		return
+	}
+	delete(m.conns, c.conn.RemoteAddr().String())
+	c.name = name
+	m.conns[name] = c
 	c.write("Enter your password: ")
+	c.state = statePassword
 }
 
 // handlePassword processes commands from the connection in the password state.

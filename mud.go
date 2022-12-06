@@ -28,6 +28,19 @@ type connection struct {
 type mud struct {
 	listener net.Listener
 	conns    map[string]*connection
+    rooms    map[string]*room
+}
+
+// positionHash returns a hash of the given x and y position.
+func positionHash(x, y int) string {
+    return fmt.Sprintf("%04d%04d", x, y)
+}
+
+// room represents a room in the MUD.
+type room struct {
+    name        string
+    description string
+    exits       map[string]string
 }
 
 // player represents a player in the MUD.
@@ -40,10 +53,13 @@ type player struct {
 
 // newMud creates a new MUD server.
 func newMud() *mud {
-	return &mud{
-		conns: make(map[string]*connection),
-	}
+    return &mud{
+        listener: nil,
+        conns:    make(map[string]*connection),
+        rooms:    make(map[string]*room),
+    }
 }
+
 
 // listen starts listening for connections on the given address.
 func (m *mud) listen(addr string) error {
@@ -185,14 +201,75 @@ func (m *mud) quit(c *connection) {
 	}
 }
 
+// newRoom creates a new room.
+func newRoom(name, description string) *room {
+    return &room{
+        name:        name,
+        description: description,
+        exits:       make(map[string]string),
+    }
+}
+
+// addRoom adds a new room to the MUD.
+func (m *mud) addRoom(x, y int, r *room) {
+    key := positionHash(x, y)
+    m.rooms[key] = r
+}
+
+// addExit adds an exit to the room in the given direction.
+func (r *room) addExit(direction string, x, y int) {
+    key := positionHash(x, y)
+    r.exits[direction] = key
+}
+
+// getExit looks up the room in the given direction.
+func (r *room) getExit(direction string, rooms map[string]*room) *room {
+    key, ok := r.exits[direction]
+    if !ok {
+        return nil
+    }
+    return rooms[key]
+}
+
 // write sends the given message to the connection.
 func (c *connection) write(msg string) {
 	c.output.WriteString(msg)
 	c.output.Flush()
 }
 
+// center returns the given string padded with spaces so that it is centered
+// within the given width.
+func center(s string, width int) string {
+    pad := width - len(s)
+    if pad < 0 {
+        return s
+    }
+    left := pad / 2
+    right := pad - left
+    return strings.Repeat(" ", left) + s + strings.Repeat(" ", right)
+}
+
 func main() {
 	m := newMud()
+
+	// create some rooms
+    r1 := newRoom("Cavern", "A large cavern with a flowing stream.")
+    r2 := newRoom("Tunnel", "A dark tunnel leading to unknown depths.")
+    r3 := newRoom("Start", "You are standing at the start of your adventure.")
+
+    // add the rooms to the MUD
+    m.addRoom(1, 1, r1)
+    m.addRoom(2, 2, r2)
+    m.addRoom(0, 0, r3)
+
+    // add some exits to the rooms
+    r1.addExit("east", 2, 1)
+    r2.addExit("west", 1, 1)
+    r3.addExit("north", 0, 1)
+    r3.addExit("east", 1, 0)
+    r3.addExit("south", 0, -1)
+    r3.addExit("west", -1, 0)
+
 	if err := m.listen("localhost:8080"); err != nil {
 		panic(err)
 	}
@@ -204,3 +281,4 @@ func main() {
 		go m.handleConnection(c)
 	}
 }
+

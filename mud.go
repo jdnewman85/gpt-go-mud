@@ -22,6 +22,7 @@ type connection struct {
 	state  int
 	output *bufio.Writer
 	player *player
+	mud    *mud
 }
 
 // mud represents the MUD server.
@@ -40,7 +41,18 @@ func positionHash(x, y int) string {
 type room struct {
     name        string
     description string
+    x           int
+    y           int
     exits       map[string]string
+}
+
+// newRoom creates a new room.
+func newRoom(name, description string) *room {
+    return &room{
+        name:        name,
+        description: description,
+        exits:       make(map[string]string),
+    }
 }
 
 // player represents a player in the MUD.
@@ -150,6 +162,8 @@ func (m *mud) handlePassword(c *connection, cmd string) {
 // handlePlaying processes playing commands from the given connection.
 func (m *mud) handlePlaying(c *connection, cmd string, args []string) {
 	switch cmd {
+    case "look":
+        m.look(c)
 	case "who":
 		m.who(c)
 	case "say":
@@ -187,6 +201,35 @@ func (m *mud) say(c *connection, args []string) {
 	}
 }
 
+// handleLook processes the look command for the given connection.
+func (m *mud) look(c *connection) {
+    // get the player's current position
+    x, y := c.player.x, c.player.y
+
+    // look up the room at the player's position
+    key := positionHash(x, y)
+    r, ok := m.rooms[key]
+    if !ok {
+        c.write("You are lost in the void.\n")
+        return
+    }
+
+    // write the room name and description
+    c.write(fmt.Sprintf("%s\n", r.name))
+    c.write(fmt.Sprintf("%s\n", r.description))
+
+    // write the exits from the room
+    c.write("Exits:\n")
+    for dir, key := range r.exits {
+        r2, ok := m.rooms[key]
+        if !ok {
+            continue
+        }
+        c.write(fmt.Sprintf("%s - %s\n", dir, r2.name))
+    }
+}
+
+
 // quit disconnects the given connection.
 func (m *mud) quit(c *connection) {
 	c.write("Bye!\n")
@@ -201,25 +244,51 @@ func (m *mud) quit(c *connection) {
 	}
 }
 
-// newRoom creates a new room.
-func newRoom(name, description string) *room {
-    return &room{
-        name:        name,
-        description: description,
-        exits:       make(map[string]string),
-    }
-}
-
-// addRoom adds a new room to the MUD.
+// addRoom adds a room at the given position.
 func (m *mud) addRoom(x, y int, r *room) {
-    key := positionHash(x, y)
-    m.rooms[key] = r
+    r.x, r.y = x, y
+    m.rooms[positionHash(x, y)] = r
 }
 
-// addExit adds an exit to the room in the given direction.
-func (r *room) addExit(direction string, x, y int) {
+// addExit adds an exit in the given direction from the given room to another room.
+func (m *mud) addExit(r *room, dir string) {
+    // check if a room already exists in the given direction
+    x, y := r.x, r.y
+    switch dir {
+    case "north":
+        y++
+    case "east":
+        x++
+    case "south":
+        y--
+    case "west":
+        x--
+    default:
+        return
+    }
     key := positionHash(x, y)
-    r.exits[direction] = key
+    r2, ok := m.rooms[key]
+    if !ok {
+        // no room exists in the given direction, so do nothing
+        return
+    }
+
+    // add the exit from the given room to the room in the given direction
+    r.exits[dir] = key
+
+    // add the return exit from the room in the given direction to the given room
+    var returnDir string
+    switch dir {
+    case "north":
+        returnDir = "south"
+    case "east":
+        returnDir = "west"
+    case "south":
+        returnDir = "north"
+    case "west":
+        returnDir = "east"
+    }
+    r2.exits[returnDir] = positionHash(r.x, r.y)
 }
 
 // getExit looks up the room in the given direction.
@@ -252,23 +321,20 @@ func center(s string, width int) string {
 func main() {
 	m := newMud()
 
-	// create some rooms
+    // create some rooms
     r1 := newRoom("Cavern", "A large cavern with a flowing stream.")
     r2 := newRoom("Tunnel", "A dark tunnel leading to unknown depths.")
     r3 := newRoom("Start", "You are standing at the start of your adventure.")
 
     // add the rooms to the MUD
-    m.addRoom(1, 1, r1)
-    m.addRoom(2, 2, r2)
-    m.addRoom(0, 0, r3)
+    m.addRoom(0, 0, r1)
+    m.addRoom(1, 0, r2)
+    m.addRoom(0, 1, r3)
 
     // add some exits to the rooms
-    r1.addExit("east", 2, 1)
-    r2.addExit("west", 1, 1)
-    r3.addExit("north", 0, 1)
-    r3.addExit("east", 1, 0)
-    r3.addExit("south", 0, -1)
-    r3.addExit("west", -1, 0)
+    m.addExit(r1, "east")
+    m.addExit(r2, "west")
+    m.addExit(r3, "north")
 
 	if err := m.listen("localhost:8080"); err != nil {
 		panic(err)

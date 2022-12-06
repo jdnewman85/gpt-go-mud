@@ -170,12 +170,50 @@ func (m *mud) handlePlaying(c *connection, cmd string, args []string) {
 		m.say(c, args)
 	case "quit":
 		m.quit(c)
+    case "north":
+        m.move(c, "north")
+    case "east":
+        m.move(c, "east")
+    case "south":
+        m.move(c, "south")
+    case "west":
+        m.move(c, "west")
 	default:
 		c.write("Unknown command.\n")
 	}
 	if c.state == statePlaying {
 		c.write(fmt.Sprintf("%s: %d/%d > ", c.name, c.player.health, c.player.mana))
 	}
+}
+
+// move moves the player in the given direction if an exit exists in that direction.
+func (m *mud) move(c *connection, dir string) {
+    p := c.player
+
+    // check if an exit exists in the given direction
+    exitHash, ok := m.getRoomByPosition(p.x, p.y).exits[dir]
+    if !ok {
+        // no exit exists in the given direction, so do nothing
+        c.write("You cannot go that way.\n")
+        return
+    }
+
+    // move the player to the room in the given direction
+    p.x, p.y = m.getRoomPositionFromHash(exitHash)
+    c.write(fmt.Sprintf("You move %s.\n", dir))
+    m.look(c)
+}
+
+// getRoomByPosition returns the room at the given position.
+func (m *mud) getRoomByPosition(x, y int) *room {
+    return m.rooms[positionHash(x, y)]
+}
+
+// getRoomPositionFromHash returns the position of the room with the given position hash.
+func (m *mud) getRoomPositionFromHash(hash string) (int, int) {
+    x, y := 0, 0
+    fmt.Sscanf(hash, "%04d%04d", &x, &y)
+    return x, y
 }
 
 // who displays the list of players in the playing state to the given connection.

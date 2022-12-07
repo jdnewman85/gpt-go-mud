@@ -356,23 +356,61 @@ func center(s string, width int) string {
     return strings.Repeat(" ", left) + s + strings.Repeat(" ", right)
 }
 
+// createMap creates the map of rooms and adds them to the given mud struct.
+func (m *mud)createMap() {
+    // create rooms
+	r1 := newRoom("Mall Entrance", "The mall entrance is bustling with people coming and going.")
+	r2 := newRoom("Directory", "The directory is a large board listing all the stores in the mall.")
+	r3 := newRoom("Food Court", "The food court is full of the smells and sounds of various restaurants.")
+	r4 := newRoom("Arcade", "The arcade is filled with flashing lights and the sounds of games.")
+	r5 := newRoom("Restroom", "The restroom is clean and well-maintained.")
+	r6 := newRoom("Toy Store", "The toy store is filled with rows of colorful toys and games.")
+	r7 := newRoom("Electronics Store", "The electronics store is full of the latest gadgets and technology.")
+	r8 := newRoom("Clothing Store", "The clothing store is full of racks of clothes in the latest styles.")
+	r9 := newRoom("Shoe Store", "The shoe store is filled with rows of shoes of all shapes, sizes, and colors.")
+	r10 := newRoom("Sporting Goods Store", "The sporting goods store is full of a wide variety of sports equipment and apparel.")
+
+    // add rooms to the map
+    m.rooms[positionHash(0, 0)] = r1
+    m.rooms[positionHash(1, 0)] = r2
+    m.rooms[positionHash(2, 0)] = r3
+    m.rooms[positionHash(3, 0)] = r4
+    m.rooms[positionHash(3, 1)] = r5
+    m.rooms[positionHash(3, 2)] = r6
+    m.rooms[positionHash(2, 2)] = r7
+    m.rooms[positionHash(1, 2)] = r8
+    m.rooms[positionHash(0, 2)] = r9
+    m.rooms[positionHash(0, 1)] = r10
+
+	// add exits
+	m.addExit(r1, "north")
+	m.addExit(r1, "south")
+	m.addExit(r2, "west")
+	m.addExit(r2, "east")
+	m.addExit(r3, "north")
+	m.addExit(r3, "south")
+	m.addExit(r3, "west")
+	m.addExit(r4, "west")
+	m.addExit(r4, "east")
+	m.addExit(r5, "south")
+	m.addExit(r5, "east")
+	m.addExit(r6, "west")
+	m.addExit(r6, "north")
+	m.addExit(r7, "west")
+	m.addExit(r7, "south")
+	m.addExit(r8, "west")
+	m.addExit(r8, "north")
+	m.addExit(r9, "west")
+	m.addExit(r9, "north")
+	m.addExit(r10, "west")
+	m.addExit(r10, "north")
+}
+
+
 func main() {
 	m := newMud()
 
-    // create some rooms
-    r1 := newRoom("Cavern", "A large cavern with a flowing stream.")
-    r2 := newRoom("Tunnel", "A dark tunnel leading to unknown depths.")
-    r3 := newRoom("Start", "You are standing at the start of your adventure.")
-
-    // add the rooms to the MUD
-    m.addRoom(0, 0, r1)
-    m.addRoom(1, 0, r2)
-    m.addRoom(0, 1, r3)
-
-    // add some exits to the rooms
-    m.addExit(r1, "east")
-    m.addExit(r2, "west")
-    m.addExit(r3, "north")
+	m.createMap()
 
 	if err := m.listen("localhost:8080"); err != nil {
 		panic(err)
@@ -385,4 +423,3 @@ func main() {
 		go m.handleConnection(c)
 	}
 }
-
